@@ -110,6 +110,40 @@
   .send:active{transform:scale(.9)}
   .send:disabled{opacity:.45;box-shadow:none}
   .send svg{width:20px;height:20px;margin-left:2px}
+  /* аура */
+  .aura{display:flex;align-items:center;gap:6px;height:40px;padding:0 12px;border-radius:14px;border:1px solid var(--line);
+    background:rgba(255,255,255,.06);color:var(--text);font:inherit;cursor:pointer;white-space:nowrap}
+  .aura:active{background:rgba(255,255,255,.14)}
+  .aura .n{font-weight:800;font-size:14px;font-variant-numeric:tabular-nums}
+  .aura .r{font-size:11px;color:var(--muted);display:block;line-height:1}
+  .aura .col{display:flex;flex-direction:column;align-items:flex-start;gap:2px}
+  .aura.bump{animation:bump .5s ease}
+  @keyframes bump{30%{transform:scale(1.12)}}
+  .ab{align-self:flex-start;display:inline-flex;align-items:center;gap:4px;margin:4px 0 0 36px;padding:3px 9px;border-radius:999px;font-size:12px;font-weight:700;
+    animation:pop .3s ease-out}
+  .ab.plus{background:rgba(34,197,94,.14);color:#4ade80;border:1px solid rgba(34,197,94,.3)}
+  .ab.minus{background:rgba(239,68,68,.14);color:#f87171;border:1px solid rgba(239,68,68,.3)}
+  .fly{position:fixed;z-index:50;font-weight:900;font-size:22px;pointer-events:none;animation:fly 1.2s ease-out forwards;
+    text-shadow:0 2px 12px rgba(0,0,0,.6)}
+  .fly.plus{color:#4ade80}.fly.minus{color:#f87171}
+  @keyframes fly{from{opacity:0;transform:translateY(20px) scale(.7)}20%{opacity:1;transform:translateY(0) scale(1.15)}to{opacity:0;transform:translateY(-50px) scale(1)}}
+  .toast{position:fixed;left:50%;top:90px;z-index:60;transform:translateX(-50%);padding:12px 18px;border-radius:18px;text-align:center;
+    background:linear-gradient(135deg,var(--o1),var(--p1));color:#fff;font-weight:700;box-shadow:0 12px 40px rgba(0,0,0,.5);
+    animation:toast 3.2s ease forwards;white-space:nowrap}
+  .toast small{display:block;font-weight:500;opacity:.85;font-size:12px}
+  @keyframes toast{0%{opacity:0;transform:translate(-50%,-20px)}10%,85%{opacity:1;transform:translate(-50%,0)}100%{opacity:0;transform:translate(-50%,-10px)}}
+  .sheet-bg{position:fixed;inset:0;z-index:70;background:rgba(0,0,0,.55);display:none;align-items:flex-end;justify-content:center}
+  .sheet-bg.open{display:flex}
+  .sheet{width:100%;max-width:560px;padding:18px 16px;padding-bottom:max(18px,env(safe-area-inset-bottom));border-radius:26px 26px 0 0;
+    background:#15151d;border:1px solid var(--line);animation:up .25s ease-out}
+  @keyframes up{from{transform:translateY(40px);opacity:0}}
+  .sheet h3{font-size:18px;margin-bottom:2px}
+  .sheet .sub{color:var(--muted);font-size:13px;margin-bottom:14px}
+  .lvl{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:14px;margin-bottom:6px;background:rgba(255,255,255,.04)}
+  .lvl.cur{background:linear-gradient(135deg,rgba(255,77,31,.25),rgba(139,92,246,.25));border:1px solid rgba(255,154,60,.4)}
+  .lvl .e{font-size:22px}.lvl b{flex:1;font-size:15px}.lvl small{color:var(--muted);font-size:12px}
+  .reset{width:100%;margin-top:10px;padding:12px;border-radius:14px;border:1px solid rgba(239,68,68,.35);background:rgba(239,68,68,.1);
+    color:#f87171;font:inherit;font-weight:600;cursor:pointer}
 </style>
 </head>
 <body>
@@ -119,6 +153,7 @@
   <header>
     <div class="ava"><div class="ring"></div><div class="face">😎</div><div class="on"></div></div>
     <div class="who"><b>Братан</b><span id="status">в сети, готов стебать</span></div>
+    <button class="aura" id="aura" type="button" aria-label="Аура"><span>⚡</span><span class="col"><span class="n" id="auraN">0</span><span class="r" id="auraR">Нормис</span></span></button>
     <button class="iconbtn" id="clear" title="Новый чат" aria-label="Новый чат">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg>
     </button>
@@ -133,6 +168,13 @@
     </button>
   </form>
 </div>
+
+<div class="sheet-bg" id="sheetBg"><div class="sheet">
+  <h3>⚡ Твоя аура: <span id="sheetN">0</span></h3>
+  <div class="sub">Братан ставит плюс или минус за каждое твоё сообщение</div>
+  <div id="ladder"></div>
+  <button class="reset" id="resetAura" type="button">Обнулить ауру</button>
+</div></div>
 
 <script>
 // адрес воркера (прокладка к Groq)
@@ -203,7 +245,7 @@ function hero(){
 function render(){
   chat.innerHTML = "";
   if (!history.length) return hero();
-  history.forEach(m => addRow(m.role, m.content, m.ts));
+  history.forEach(m => { const row = addRow(m.role, m.content, m.ts); if (m.aura) auraBadge(row, m.aura); });
 }
 
 async function send(text){
@@ -231,8 +273,11 @@ async function send(text){
     typing.remove();
     if (!r.ok || !data.reply) throw new Error(data.error || ("Ошибка " + r.status));
     const rts = Date.now();
-    history.push({ role: "assistant", content: data.reply, ts: rts });
-    addRow("assistant", data.reply, rts);
+    const { clean, delta } = parseAura(data.reply);
+    history.push({ role: "assistant", content: clean || "…", ts: rts, aura: delta || undefined });
+    const row = addRow("assistant", clean || "…", rts);
+    auraBadge(row, delta);
+    applyAura(delta);
     save();
   } catch (e) {
     typing.remove(); mine.remove();
@@ -260,6 +305,78 @@ document.getElementById("clear").addEventListener("click", () => {
   if (!history.length) return;
   history = []; save(); render();
 });
+
+// ===== АУРА =====
+const RANKS = [
+  [-Infinity, "💀", "Скуф-позорник"],
+  [-3000,     "🤡", "Кринжовый"],
+  [0,         "🧍", "НПС"],
+  [1000,      "😐", "Нормис"],
+  [5000,      "🗿", "Сигма"],
+  [15000,     "⚡", "Имба"],
+  [40000,     "👑", "Легенда района"],
+];
+let aura = 0;
+try { aura = parseInt(localStorage.getItem("bratan_aura") || "0", 10) || 0; } catch {}
+const rankOf = v => { let r = RANKS[0]; for (const x of RANKS) if (v >= x[0]) r = x; return r; };
+const fmt = v => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toLocaleString("ru-RU");
+const AURA_RE = /\[\s*(?:АУРА|AURA)\s*:?\s*([+\-−–]?\s*\d[\d\s]*)\s*\]/i;
+
+function parseAura(text){
+  const m = text.match(AURA_RE);
+  if (!m) return { clean: text, delta: 0 };
+  let d = parseInt(m[1].replace(/[\s]/g,"").replace(/[−–]/,"-"), 10) || 0;
+  d = Math.max(-1000, Math.min(1000, d));
+  return { clean: text.replace(AURA_RE, "").replace(/\n{2,}$/,"").trim(), delta: d };
+}
+function drawAura(){
+  const r = rankOf(aura);
+  document.getElementById("auraN").textContent = (aura < 0 ? "−" : "") + Math.abs(aura).toLocaleString("ru-RU");
+  document.getElementById("auraR").textContent = r[2];
+  document.getElementById("sheetN").textContent = (aura < 0 ? "−" : "") + Math.abs(aura).toLocaleString("ru-RU");
+  const lad = document.getElementById("ladder"); lad.innerHTML = "";
+  [...RANKS].reverse().forEach(x => {
+    const d = document.createElement("div"); d.className = "lvl" + (x === r ? " cur" : "");
+    d.innerHTML = `<span class="e">${x[1]}</span><b>${x[2]}</b><small>${x[0] === -Infinity ? "ниже −3 000" : "от " + fmt(x[0]).replace("+","")}</small>`;
+    lad.appendChild(d);
+  });
+}
+function applyAura(delta){
+  if (!delta) return;
+  const before = rankOf(aura);
+  aura += delta;
+  try { localStorage.setItem("bratan_aura", String(aura)); } catch {}
+  const pill = document.getElementById("aura");
+  const rect = pill.getBoundingClientRect();
+  const f = document.createElement("div");
+  f.className = "fly " + (delta > 0 ? "plus" : "minus");
+  f.textContent = fmt(delta);
+  f.style.left = (rect.left + rect.width/2 - 30) + "px"; f.style.top = (rect.bottom + 4) + "px";
+  document.body.appendChild(f); setTimeout(() => f.remove(), 1300);
+  pill.classList.remove("bump"); void pill.offsetWidth; pill.classList.add("bump");
+  drawAura();
+  const after = rankOf(aura);
+  if (after !== before) {
+    const t = document.createElement("div"); t.className = "toast";
+    const up = RANKS.indexOf(after) > RANKS.indexOf(before);
+    t.innerHTML = `${after[1]} ${up ? "Новое звание" : "Ты скатился"}: ${after[2]}<small>${up ? "респект, бро" : "минус аура, братан"}</small>`;
+    document.body.appendChild(t); setTimeout(() => t.remove(), 3300);
+  }
+}
+function auraBadge(row, delta){
+  if (!delta) return;
+  const b = document.createElement("div");
+  b.className = "ab " + (delta > 0 ? "plus" : "minus");
+  b.textContent = (delta > 0 ? "⚡ " : "💀 ") + fmt(delta) + " ауры";
+  row.after(b);
+}
+document.getElementById("aura").onclick = () => document.getElementById("sheetBg").classList.add("open");
+document.getElementById("sheetBg").onclick = e => { if (e.target.id === "sheetBg") e.currentTarget.classList.remove("open"); };
+document.getElementById("resetAura").onclick = () => {
+  aura = 0; try { localStorage.setItem("bratan_aura","0"); } catch {}
+  drawAura(); document.getElementById("sheetBg").classList.remove("open");
+};
+drawAura();
 
 render();
 </script>
