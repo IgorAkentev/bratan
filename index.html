@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#111214">
+<title>Братан — угарный ИИ</title>
+<style>
+  :root{
+    --bg:#0e0f11; --panel:#16181c; --line:#24272d; --text:#eceef2; --muted:#8b919c;
+    --me:#ff5a1f; --me2:#ff8a3d; --bot:#1f2228; --accent:#ffb23d;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;-webkit-tap-highlight-color:transparent}
+  .app{height:100dvh;max-width:520px;margin:0 auto;display:flex;flex-direction:column;
+    border-left:1px solid var(--line);border-right:1px solid var(--line);background:var(--bg)}
+  header{display:flex;align-items:center;gap:12px;padding:14px 16px;padding-top:max(14px,env(safe-area-inset-top));
+    background:var(--panel);border-bottom:1px solid var(--line)}
+  .ava{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;font-size:22px;
+    background:linear-gradient(135deg,var(--me),var(--accent));box-shadow:0 0 0 2px #0e0f11,0 0 0 3px #ff5a1f55}
+  .who{flex:1;min-width:0}
+  .who b{display:block;font-size:17px}
+  .who span{font-size:12.5px;color:#4ade80}
+  .who span.typing{color:var(--accent)}
+  .iconbtn{background:none;border:0;color:var(--muted);font-size:20px;padding:6px;cursor:pointer;border-radius:10px}
+  .iconbtn:active{background:var(--line)}
+  #chat{flex:1;overflow-y:auto;padding:16px 12px 8px;display:flex;flex-direction:column;gap:8px;scroll-behavior:smooth}
+  .msg{max-width:82%;padding:9px 13px;border-radius:18px;font-size:15.5px;line-height:1.38;white-space:pre-wrap;
+    word-wrap:break-word;animation:pop .18s ease-out}
+  .msg.me{align-self:flex-end;background:linear-gradient(135deg,var(--me),var(--me2));color:#fff;border-bottom-right-radius:6px}
+  .msg.bot{align-self:flex-start;background:var(--bot);border-bottom-left-radius:6px}
+  .msg.err{align-self:center;background:#3a1717;color:#ffb4b4;font-size:13.5px;border-radius:12px}
+  .dots{display:inline-flex;gap:4px;padding:4px 2px}
+  .dots i{width:7px;height:7px;border-radius:50%;background:var(--muted);animation:blink 1.2s infinite}
+  .dots i:nth-child(2){animation-delay:.2s}.dots i:nth-child(3){animation-delay:.4s}
+  @keyframes blink{0%,80%,100%{opacity:.25}40%{opacity:1}}
+  @keyframes pop{from{transform:translateY(6px);opacity:0}to{transform:none;opacity:1}}
+  .chips{display:flex;gap:8px;overflow-x:auto;padding:4px 12px 8px;scrollbar-width:none}
+  .chips::-webkit-scrollbar{display:none}
+  .chip{flex:none;background:var(--panel);border:1px solid var(--line);color:var(--text);
+    padding:8px 12px;border-radius:999px;font-size:13.5px;cursor:pointer}
+  .chip:active{border-color:var(--me)}
+  form{display:flex;gap:8px;align-items:flex-end;padding:10px 12px;padding-bottom:max(10px,env(safe-area-inset-bottom));
+    background:var(--panel);border-top:1px solid var(--line)}
+  textarea{flex:1;resize:none;max-height:120px;background:var(--bg);color:var(--text);border:1px solid var(--line);
+    border-radius:20px;padding:10px 14px;font:inherit;font-size:15.5px;outline:none}
+  textarea:focus{border-color:#ff5a1f88}
+  .send{width:44px;height:44px;flex:none;border:0;border-radius:50%;cursor:pointer;color:#fff;font-size:19px;
+    background:linear-gradient(135deg,var(--me),var(--me2))}
+  .send:disabled{opacity:.4}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="ava">😎</div>
+    <div class="who"><b>Братан</b><span id="status">в сети, готов стебать</span></div>
+    <button class="iconbtn" id="clear" title="Новый чат">🗑</button>
+  </header>
+
+  <div id="chat"></div>
+
+  <div class="chips" id="chips">
+    <button class="chip">Подъеби меня 😈</button>
+    <button class="chip">Расскажи анекдот</button>
+    <button class="chip">Чё делать, скучно</button>
+    <button class="chip">Оцени мою жизнь</button>
+  </div>
+
+  <form id="form">
+    <textarea id="input" rows="1" placeholder="Напиши чё-нибудь…"></textarea>
+    <button class="send" id="send" type="submit">➤</button>
+  </form>
+</div>
+
+<script>
+// ↓↓↓ сюда вставишь адрес своего воркера после деплоя
+const WORKER_URL = "https://ugar.akentevtut.workers.dev";
+
+const chat = document.getElementById("chat");
+const input = document.getElementById("input");
+const form = document.getElementById("form");
+const sendBtn = document.getElementById("send");
+const statusEl = document.getElementById("status");
+const chips = document.getElementById("chips");
+
+const GREETING = "Здарова, бродяга 🤙 Я Братан. Спрашивай чё хочешь — отвечу, а заодно и подъебу. Только не ной потом 😏";
+let history = [];
+try { history = JSON.parse(localStorage.getItem("bratan_history") || "[]"); } catch {}
+
+function save(){ try{ localStorage.setItem("bratan_history", JSON.stringify(history.slice(-40))); }catch{} }
+
+function bubble(text, cls){
+  const d = document.createElement("div");
+  d.className = "msg " + cls;
+  d.textContent = text;
+  chat.appendChild(d);
+  chat.scrollTop = chat.scrollHeight;
+  return d;
+}
+
+function render(){
+  chat.innerHTML = "";
+  bubble(GREETING, "bot");
+  history.forEach(m => bubble(m.content, m.role === "user" ? "me" : "bot"));
+  chips.style.display = history.length ? "none" : "flex";
+}
+
+async function send(text){
+  text = text.trim();
+  if (!text || sendBtn.disabled) return;
+  input.value = ""; autosize();
+  chips.style.display = "none";
+  history.push({ role: "user", content: text });
+  const mine = bubble(text, "me");
+  save();
+
+  sendBtn.disabled = true;
+  statusEl.textContent = "печатает…"; statusEl.className = "typing";
+  const typing = bubble("", "bot");
+  typing.innerHTML = '<span class="dots"><i></i><i></i><i></i></span>';
+
+  try {
+    const r = await fetch(WORKER_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: history }),
+    });
+    const data = await r.json().catch(() => ({}));
+    typing.remove();
+    if (!r.ok || !data.reply) throw new Error(data.error || ("Ошибка " + r.status));
+    history.push({ role: "assistant", content: data.reply });
+    bubble(data.reply, "bot");
+    save();
+  } catch (e) {
+    typing.remove();
+    history.pop(); save(); mine.remove();
+    bubble("⚠️ " + (e.message === "Failed to fetch" ? "Нет связи с сервером" : e.message), "err");
+    input.value = text; autosize();
+  } finally {
+    sendBtn.disabled = false;
+    statusEl.textContent = "в сети, готов стебать"; statusEl.className = "";
+  }
+}
+
+function autosize(){ input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 120) + "px"; }
+
+form.addEventListener("submit", e => { e.preventDefault(); send(input.value); });
+input.addEventListener("input", autosize);
+input.addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey && window.innerWidth > 700) { e.preventDefault(); send(input.value); }
+});
+chips.addEventListener("click", e => { if (e.target.classList.contains("chip")) send(e.target.textContent); });
+document.getElementById("clear").addEventListener("click", () => {
+  if (!history.length) return;
+  history = []; save(); render();
+});
+
+render();
+</script>
+</body>
+</html>
